@@ -181,14 +181,12 @@ class BreakTimer:
             json.dump(self.config, f)
             
     def setup_ui(self):
-        _log("setup_ui: make_title_bar")
-        # Title bar: app name + close only (minimize is the big button inside)
-        make_title_bar(self.root, self.root, "Break reminder", on_close=self.root.quit, on_minimize=None)
         _log("setup_ui: body frame")
-        # Body: centered content
+        # Use OS window frame so the window appears in the taskbar and minimize works.
+        # No custom title bar here (would require overrideredirect which hides taskbar).
         body = tk.Frame(self.root, bg=THEME["bg"])
         body.pack(fill=tk.BOTH, expand=True)
-        body.config(width=400, height=344)  # 380 - 36 title bar
+        body.config(width=400, height=380)
 
         main_frame = tk.Frame(body, bg=THEME["bg"])
         main_frame.place(relx=0.5, rely=0.5, anchor="center")
@@ -234,18 +232,8 @@ class BreakTimer:
         self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
     def _apply_no_decorations(self):
-        """Remove OS window decorations (call after first map to avoid hang)."""
-        # Only on Windows: overrideredirect removes title bar. On Linux/WSL it can cause xcb crash.
-        if sys.platform != "win32":
-            _log("apply_no_decorations: skipped on non-Windows (avoid crash)")
-            return
-        try:
-            _log("apply_no_decorations: setting overrideredirect(True)")
-            self.root.overrideredirect(True)
-            self._center_window()
-            _log("apply_no_decorations: done")
-        except Exception as e:
-            _log(f"apply_no_decorations: error {e}")
+        """Remove OS window decorations. Disabled: causes window to disappear from taskbar and breaks minimize."""
+        _log("apply_no_decorations: skipped (keep taskbar and minimize working)")
 
     def _after_first_map(self):
         """Runs once after window is shown: strip decorations, then start tray."""

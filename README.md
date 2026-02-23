@@ -2,6 +2,8 @@
 
 A smart Windows break reminder application that encourages your wife to take actual breaks from work.
 
+[**Download latest release (Windows exe)**](https://github.com/talkingtoaj/break-timer/releases/latest) · [Direct download: Break reminder.exe](https://github.com/talkingtoaj/break-timer/releases/latest/download/Break%20reminder.exe)
+
 ## Features
 
 - Runs on Windows 11+
@@ -28,12 +30,32 @@ A smart Windows break reminder application that encourages your wife to take act
 
 ## Installation
 
-### Option 1: Automated Installation (Recommended)
+### Install on Windows (recommended)
+
+1. **Download the installer**  
+   - Go to [**Releases**](https://github.com/talkingtoaj/break-timer/releases/latest) and download **Break reminder.exe** from the latest release, or  
+   - Run **`install_break_reminder.bat`** (see below) to download and install automatically.
+
+2. **Run the app**  
+   Double-click **Break reminder.exe**. The window appears in the taskbar.
+
+3. **Start with Windows (optional)**  
+   In Command Prompt or PowerShell, go to the folder where the exe is and run:  
+   `"Break reminder.exe" --install`  
+   To remove from startup later: Task Manager → Startup → disable "BreakTimer".
+
+Config and log files are created next to the exe. No Python or other dependencies required when using the exe.
+
+### Windows installer script (`install_break_reminder.bat`)
+
+Run **install_break_reminder.bat** to download the latest **Break reminder.exe** from GitHub Releases into a local folder and optionally add it to Windows startup. Requires an internet connection. If no release exists yet, build the exe locally with `build_exe.bat` and use the steps above.
+
+### Option 1: Automated Installation (Python)
 1. Double-click `install.bat`
 2. Follow the prompts
 3. The timer will start automatically with Windows
 
-### Option 2: Manual Installation
+### Option 2: Manual Installation (Python)
 1. Install Python 3.7+ from https://python.org
 2. Install dependencies: `pip install -r requirements.txt`
 3. Run once to add to startup: `python break_timer.py --install`
@@ -69,6 +91,7 @@ Requirements: Python 3.7+ and pip on Windows. The exe is single-file and does no
 
 ## Files
 
+- `install_break_reminder.bat` - Downloads latest exe from GitHub Releases and installs (Windows)
 - `break_timer.py` - Main application
 - `break_timer.spec` - PyInstaller spec for building the Windows exe
 - `build_exe.bat` - Builds exe and copies to Downloads (run on Windows)
