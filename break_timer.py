@@ -7,8 +7,12 @@ import sys
 import random
 import threading
 
-# Debug logging to file (same directory as script)
-DEBUG_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "break_timer_debug.log")
+# Debug logging to file (next to script or next to exe when frozen)
+if getattr(sys, "frozen", False):
+    _app_base = os.path.dirname(sys.executable)
+else:
+    _app_base = os.path.dirname(os.path.abspath(__file__))
+DEBUG_LOG = os.path.join(_app_base, "break_timer_debug.log")
 
 def _log(msg):
     try:
@@ -72,17 +76,15 @@ def make_title_bar(parent, window, title, on_close, on_minimize=None):
     bar.pack_propagate(False)
     tk.Label(bar, text=title, bg=THEME["titlebar"], fg=THEME["fg"],
              font=THEME["font_main"]).pack(side=tk.LEFT, padx=12, pady=8)
-    min_btn = tk.Label(bar, text=" − ", bg=THEME["titlebar"], fg=THEME["fg"],
-                      font=("Helvetica", 16), cursor="hand2")
-    min_btn.pack(side=tk.RIGHT, padx=(0, 2), pady=4)
-    def do_minimize(e):
-        if on_minimize is not None:
+    if on_minimize is not None:
+        min_btn = tk.Label(bar, text=" − ", bg=THEME["titlebar"], fg=THEME["fg"],
+                          font=("Helvetica", 16), cursor="hand2")
+        min_btn.pack(side=tk.RIGHT, padx=(0, 2), pady=4)
+        def do_minimize(e):
             on_minimize()
-        else:
-            window.iconify()
-    min_btn.bind("<Button-1>", do_minimize)
-    min_btn.bind("<Enter>", lambda e: min_btn.config(bg=THEME["accent"], fg="white"))
-    min_btn.bind("<Leave>", lambda e: min_btn.config(bg=THEME["titlebar"], fg=THEME["fg"]))
+        min_btn.bind("<Button-1>", do_minimize)
+        min_btn.bind("<Enter>", lambda e: min_btn.config(bg=THEME["accent"], fg="white"))
+        min_btn.bind("<Leave>", lambda e: min_btn.config(bg=THEME["titlebar"], fg=THEME["fg"]))
     close_btn = tk.Label(bar, text=" × ", bg=THEME["titlebar"], fg=THEME["fg"],
                          font=("Helvetica", 16), cursor="hand2")
     close_btn.pack(side=tk.RIGHT, padx=4, pady=4)
@@ -140,10 +142,10 @@ class BreakTimer:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Break reminder")
-        self.root.geometry("400x300")
+        self.root.geometry("400x380")
         self.root.resizable(False, False)
         self.root.configure(bg=THEME["bg"])
-        self.config_file = "break_timer_config.json"
+        self.config_file = os.path.join(_app_base, "break_timer_config.json")
         self.config = self.load_config()
         
         self.time_left = self.config["default_minutes"] * 60
@@ -180,28 +182,34 @@ class BreakTimer:
             
     def setup_ui(self):
         _log("setup_ui: make_title_bar")
-        make_title_bar(self.root, self.root, "Break reminder", on_close=self.root.quit, on_minimize=self.minimize_to_tray)
+        # Title bar: app name + close only (minimize is the big button inside)
+        make_title_bar(self.root, self.root, "Break reminder", on_close=self.root.quit, on_minimize=None)
         _log("setup_ui: body frame")
         # Body: centered content
         body = tk.Frame(self.root, bg=THEME["bg"])
         body.pack(fill=tk.BOTH, expand=True)
-        body.config(width=400, height=264)  # avoid collapse before first layout
+        body.config(width=400, height=344)  # 380 - 36 title bar
 
         main_frame = tk.Frame(body, bg=THEME["bg"])
         main_frame.place(relx=0.5, rely=0.5, anchor="center")
         
         # Title
         tk.Label(main_frame, text="Focus Session", font=THEME["font_title"], 
-                 bg=THEME["bg"], fg=THEME["fg"]).pack(pady=(0, 15))
+                 bg=THEME["bg"], fg=THEME["fg"]).pack(pady=(0, 10))
                  
         # Timer Display
         self.timer_label = tk.Label(main_frame, text="", font=THEME["font_timer"], 
                                     bg=THEME["bg"], fg=THEME["accent"])
-        self.timer_label.pack(pady=(0, 25))
+        self.timer_label.pack(pady=(0, 20))
         
-        # Interval Selection: buttons with label on the button
+        # Large Minimize button (under the timer)
+        self.minimize_btn = FlatButton(main_frame, text="Minimize to tray", command=self.minimize_to_tray)
+        self.minimize_btn.config(font=("Helvetica", 14), padx=24, pady=12)
+        self.minimize_btn.pack(pady=(0, 20))
+        
+        # Interval / countdown amount: 20, 30, 45, 60 (beneath minimize)
         interval_frame = tk.Frame(main_frame, bg=THEME["bg"])
-        interval_frame.pack(pady=(0, 25))
+        interval_frame.pack(pady=(0, 10))
         
         self.interval_buttons = {}
         for val in [20, 30, 45, 60]:
@@ -220,16 +228,16 @@ class BreakTimer:
     def _center_window(self):
         """Center main window on screen (called after setup_ui and tray)."""
         self.root.update_idletasks()
-        w, h = 400, 300
+        w, h = 400, 380
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
     def _apply_no_decorations(self):
         """Remove OS window decorations (call after first map to avoid hang)."""
-        # overrideredirect on Linux/WSL can trigger X11/xcb crashes in some setups; skip.
+        # Only on Windows: overrideredirect removes title bar. On Linux/WSL it can cause xcb crash.
         if sys.platform != "win32":
-            _log("apply_no_decorations: skipped on non-Windows")
+            _log("apply_no_decorations: skipped on non-Windows (avoid crash)")
             return
         try:
             _log("apply_no_decorations: setting overrideredirect(True)")

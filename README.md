@@ -38,6 +38,24 @@ A smart Windows break reminder application that encourages your wife to take act
 2. Install dependencies: `pip install -r requirements.txt`
 3. Run once to add to startup: `python break_timer.py --install`
 
+## Building the Windows exe
+
+To create a standalone **Break reminder.exe** and copy it to your Downloads folder:
+
+1. On **Windows**, open the project folder in Command Prompt or PowerShell.
+2. Run: **`build_exe.bat`**
+3. The script installs PyInstaller (if needed), builds the exe, and copies **Break reminder.exe** to `%USERPROFILE%\Downloads`. A File Explorer window will open to that file.
+
+Requirements: Python 3.7+ and pip on Windows. The exe is single-file and does not show a console window. Config and log files are created next to the exe when you run it from the folder you keep it in.
+
+## Running on Windows
+
+- **Using the exe**: Double-click **Break reminder.exe** (e.g. from your Downloads folder). The window appears in the **taskbar**; use the title bar **Minimize** or the in-app **Minimize to tray** button to hide it. Use the system tray icon (if available) or the taskbar button to restore.
+- **Start with Windows**: Open Command Prompt or PowerShell, go to the folder where the exe lives, and run:  
+  `"Break reminder.exe" --install`  
+  Then the app will start automatically when you log in. To remove from startup: Task Manager → Startup tab → disable "BreakTimer".
+- **Interval**: Use the 20 / 30 / 45 / 60 buttons to set the focus length. When the timer reaches 0, a break reminder appears; after the 2-minute break countdown you can resume.
+
 ## Usage
 
 - **Linux / WSL**: Run with `./run_break_timer.sh` (uses system Python to avoid a known xcb/tkinter crash with some Python builds). Or use system Python: `/usr/bin/python3 break_timer.py`.
@@ -52,6 +70,8 @@ A smart Windows break reminder application that encourages your wife to take act
 ## Files
 
 - `break_timer.py` - Main application
+- `break_timer.spec` - PyInstaller spec for building the Windows exe
+- `build_exe.bat` - Builds exe and copies to Downloads (run on Windows)
 - `run_break_timer.sh` - Launcher for Linux/WSL (uses system Python to avoid xcb crash)
 - `install.bat` - Automated installation script (Windows)
 - `requirements.txt` - Python dependencies
