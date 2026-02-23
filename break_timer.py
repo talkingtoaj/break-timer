@@ -148,7 +148,7 @@ class BreakTimer:
         self.config_file = os.path.join(_app_base, "break_timer_config.json")
         self.config = self.load_config()
         
-        self.time_left = self.config["default_minutes"] * 60
+        self.time_left = self.get_work_duration_seconds()
         self.timer_job = None
         self.reminder_window = None
         self.break_countdown_job = None
@@ -166,12 +166,16 @@ class BreakTimer:
     def load_config(self):
         default_config = {
             "default_minutes": 30,
+            "default_seconds": None,
             "break_history": []
         }
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r') as f:
-                    return json.load(f)
+                    cfg = json.load(f)
+                    if "default_seconds" not in cfg:
+                        cfg["default_seconds"] = None
+                    return cfg
             except:
                 return default_config
         return default_config
@@ -184,44 +188,53 @@ class BreakTimer:
         _log("setup_ui: body frame")
         # Use OS window frame so the window appears in the taskbar and minimize works.
         # No custom title bar here (would require overrideredirect which hides taskbar).
-        body = tk.Frame(self.root, bg=THEME["bg"])
-        body.pack(fill=tk.BOTH, expand=True)
-        body.config(width=400, height=380)
+        self.body = tk.Frame(self.root, bg=THEME["bg"])
+        self.body.pack(fill=tk.BOTH, expand=True)
+        self.body.config(width=400, height=380)
+        self.show_focus_view()
+        _log("setup_ui: done")
 
-        main_frame = tk.Frame(body, bg=THEME["bg"])
+    def _clear_body(self):
+        for child in self.body.winfo_children():
+            child.destroy()
+
+    def show_focus_view(self):
+        self.root.title("Break reminder")
+        self._clear_body()
+        main_frame = tk.Frame(self.body, bg=THEME["bg"])
         main_frame.place(relx=0.5, rely=0.5, anchor="center")
-        
-        # Title
-        tk.Label(main_frame, text="Focus Session", font=THEME["font_title"], 
+
+        tk.Label(main_frame, text="Focus Session", font=THEME["font_title"],
                  bg=THEME["bg"], fg=THEME["fg"]).pack(pady=(0, 10))
-                 
-        # Timer Display
-        self.timer_label = tk.Label(main_frame, text="", font=THEME["font_timer"], 
+
+        self.timer_label = tk.Label(main_frame, text="", font=THEME["font_timer"],
                                     bg=THEME["bg"], fg=THEME["accent"])
         self.timer_label.pack(pady=(0, 20))
-        
-        # Large Minimize button (under the timer)
+
         self.minimize_btn = FlatButton(main_frame, text="Minimize to tray", command=self.minimize_to_tray)
         self.minimize_btn.config(font=("Helvetica", 14), padx=24, pady=12)
         self.minimize_btn.pack(pady=(0, 20))
-        
-        # Interval / countdown amount: 20, 30, 45, 60 (beneath minimize)
+
         interval_frame = tk.Frame(main_frame, bg=THEME["bg"])
         interval_frame.pack(pady=(0, 10))
-        
+
         self.interval_buttons = {}
+
+        debug_btn = FlatButton(interval_frame, text="20s", command=lambda: self.set_interval_seconds(20))
+        debug_btn.pack(side=tk.LEFT, padx=6)
+        self.interval_buttons["20s"] = debug_btn
+        debug_btn.bind("<Leave>", lambda e: self._interval_leave("20s"))
+
         for val in [20, 30, 45, 60]:
+            key = f"{val}m"
             btn = FlatButton(interval_frame, text=str(val),
-                            command=lambda v=val: self.set_interval(v))
+                             command=lambda v=val: self.set_interval(v))
             btn.pack(side=tk.LEFT, padx=6)
-            self.interval_buttons[val] = btn
-            btn.bind("<Leave>", lambda e, v=val: self._interval_leave(v))
+            self.interval_buttons[key] = btn
+            btn.bind("<Leave>", lambda e, k=key: self._interval_leave(k))
         self._update_interval_buttons()
-            
-        # Restart Button — only shown after focus session completes
+
         self.restart_btn = FlatButton(main_frame, text="Restart Focus", command=self.restart_timer)
-        # don't pack yet; shown when timer hits zero
-        _log("setup_ui: done")
 
     def _center_window(self):
         """Center main window on screen (called after setup_ui and tray)."""
@@ -325,36 +338,55 @@ class BreakTimer:
         _log("_start_tray: starting tray thread")
         threading.Thread(target=run_tray, daemon=True).start()
 
-    def _interval_leave(self, val):
-        btn = self.interval_buttons[val]
-        if val == self.config["default_minutes"]:
+    def _interval_leave(self, key):
+        btn = self.interval_buttons[key]
+        if key == "20s" and self.config.get("default_seconds") == 20:
+            btn.config(bg=THEME["accent"], fg="white")
+        elif key.endswith("m") and int(key[:-1]) == self.config["default_minutes"] and self.config.get("default_seconds") is None:
             btn.config(bg=THEME["accent"], fg="white")
         else:
             btn.config(bg=THEME["secondary"], fg=THEME["fg"])
 
     def _update_interval_buttons(self):
-        for val, btn in self.interval_buttons.items():
-            if val == self.config["default_minutes"]:
+        for key, btn in self.interval_buttons.items():
+            if key == "20s" and self.config.get("default_seconds") == 20:
+                btn.config(bg=THEME["accent"], fg="white")
+            elif key.endswith("m") and int(key[:-1]) == self.config["default_minutes"] and self.config.get("default_seconds") is None:
                 btn.config(bg=THEME["accent"], fg="white")
             else:
                 btn.config(bg=THEME["secondary"], fg=THEME["fg"])
 
     def set_interval(self, minutes):
+        self.config["default_seconds"] = None
         self.config["default_minutes"] = minutes
         self.save_config()
         self._update_interval_buttons()
         self.restart_timer()
 
+    def set_interval_seconds(self, seconds):
+        self.config["default_seconds"] = seconds
+        self.save_config()
+        self._update_interval_buttons()
+        self.restart_timer()
+
+    def get_work_duration_seconds(self):
+        default_seconds = self.config.get("default_seconds")
+        if isinstance(default_seconds, int) and default_seconds > 0:
+            return default_seconds
+        return self.config["default_minutes"] * 60
+
     def restart_timer(self):
+        self.show_focus_view()
         if self.restart_btn.winfo_ismapped():
             self.restart_btn.pack_forget()
         if self.timer_job:
             self.root.after_cancel(self.timer_job)
-        if self.reminder_window and self.reminder_window.winfo_exists():
-            self.reminder_window.destroy()
+        if self.break_countdown_job:
+            self.root.after_cancel(self.break_countdown_job)
+            self.break_countdown_job = None
         self.reminder_window = None
             
-        self.time_left = self.config["default_minutes"] * 60
+        self.time_left = self.get_work_duration_seconds()
         self.update_timer_display()
         self.start_timer()
         
@@ -405,53 +437,37 @@ class BreakTimer:
             self.config["break_history"] = self.config["break_history"][-10:]
         self.save_config()
 
-    def show_break_reminder(self, message, is_ignore_message=False):
+    def show_break_reminder(self, message):
         # Bring main to front briefly to ensure visibility
         self.root.attributes('-topmost', True)
         self.root.deiconify()
         self.root.lift()
         self.root.focus_force()
         self.root.attributes('-topmost', False)
-        
-        if self.reminder_window and self.reminder_window.winfo_exists():
-            self.reminder_window.destroy()
-            
-        self.reminder_window = tk.Toplevel(self.root)
-        self.reminder_window.title("Mindful Pause")
-        self.reminder_window.geometry("450x320")
-        self.reminder_window.resizable(False, False)
-        self.reminder_window.configure(bg=THEME["bg"])
-        self.reminder_window.attributes('-topmost', True)
 
-        make_title_bar(self.reminder_window, self.reminder_window, "Mindful Pause",
-                      on_close=lambda: self.on_reminder_close(False))
-        rem_body = tk.Frame(self.reminder_window, bg=THEME["bg"])
-        rem_body.pack(fill=tk.BOTH, expand=True)
+        self.root.title("Mindful Pause")
+        self._clear_body()
+        self.reminder_window = self.root
 
-        main_frame = tk.Frame(rem_body, bg=THEME["bg"])
+        main_frame = tk.Frame(self.body, bg=THEME["bg"])
         main_frame.place(relx=0.5, rely=0.5, anchor="center")
         
         tk.Label(main_frame, text=message, font=THEME["font_title"], 
                  bg=THEME["bg"], fg=THEME["fg"]).pack(pady=(0, 10))
                  
         ignore_rate = self.get_ignore_rate()
-        self.show_joke_incentive = ignore_rate > 40 and not is_ignore_message
+        self.show_joke_incentive = ignore_rate > 40
         self.joke_shown = False
-        
+        self.break_was_ignored = False
+
         if self.show_joke_incentive:
             tk.Label(main_frame, text="Stay mindful for a little humor...", 
                      font=THEME["font_small"], bg=THEME["bg"], fg=THEME["accent"]).pack(pady=(0, 5))
-                     
-        self.is_ignore_message = is_ignore_message
-        self.hidden_time = 0
         
-        if not is_ignore_message:
-            self.break_time_left = 120 # 2 minutes
-            self.break_timer_label = tk.Label(main_frame, text="02:00", 
-                                             font=THEME["font_timer"], bg=THEME["bg"], fg=THEME["accent"])
-            self.break_timer_label.pack(pady=(0, 15))
-        else:
-            self.break_time_left = 0
+        self.break_time_left = 60 # 1 minute
+        self.break_timer_label = tk.Label(main_frame, text="01:00", 
+                                         font=THEME["font_timer"], bg=THEME["bg"], fg=THEME["accent"])
+        self.break_timer_label.pack(pady=(0, 15))
             
         self.joke_container = tk.Frame(main_frame, bg=THEME["bg"])
         self.joke_container.pack(fill="x", pady=5)
@@ -459,87 +475,86 @@ class BreakTimer:
         btn_frame = tk.Frame(main_frame, bg=THEME["bg"])
         btn_frame.pack(pady=10)
         
-        btn_text = "Fine, I'll take a break" if is_ignore_message else "Resume Focus"
-        self.ok_btn = FlatButton(btn_frame, text=btn_text, 
+        self.ok_btn = FlatButton(btn_frame, text="Resume Focus",
                                  command=lambda: self.on_reminder_close(True))
         self.ok_btn.pack(side=tk.LEFT, padx=10)
         
-        if not is_ignore_message:
-            # Initially disabled visual state
-            self.ok_btn.config(state="disabled", bg="#E4E4E4", fg="#A9A9A9") 
+        # Initially disabled visual state
+        self.ok_btn.config(state="disabled", bg="#E4E4E4", fg="#A9A9A9") 
             
-        FlatButton(btn_frame, text="Minimize", 
-                   command=lambda: self.reminder_window.iconify()).pack(side=tk.LEFT, padx=10)
-
-        self.reminder_window.update_idletasks()
-        rw, rh = 450, 320
-        rx = (self.reminder_window.winfo_screenwidth() // 2) - (rw // 2)
-        ry = (self.reminder_window.winfo_screenheight() // 2) - (rh // 2)
-        self.reminder_window.geometry(f"{rw}x{rh}+{rx}+{ry}")
-        self.reminder_window.overrideredirect(True)
+        FlatButton(btn_frame, text="Minimize",
+                   command=self.minimize_to_tray).pack(side=tk.LEFT, padx=10)
 
         # Start combined monitor and countdown loop
         self.break_tick()
 
     def break_tick(self):
-        if not self.reminder_window or not self.reminder_window.winfo_exists():
+        if not self.reminder_window or not self.root.winfo_exists():
             return
             
-        # Check if window is minimized (iconic)
-        is_visible = self.reminder_window.state() != 'iconic'
+        # Count down hidden time while minimized/withdrawn
+        is_visible = self.root.state() not in ('iconic', 'withdrawn')
         
-        if not is_visible:
-            self.hidden_time += 1
-            if self.hidden_time >= 120:
-                self.on_reminder_close(False, was_ignored=True)
-                return
-        else:
-            self.hidden_time = 0
-            
-        # Handle countdown if applicable
-        if not self.is_ignore_message and self.break_time_left > 0:
+        # Handle countdown
+        if self.break_time_left > 0:
             minutes = self.break_time_left // 60
             seconds = self.break_time_left % 60
             if hasattr(self, 'break_timer_label') and self.break_timer_label.winfo_exists():
                 self.break_timer_label.config(text=f"{minutes:02d}:{seconds:02d}")
             self.break_time_left -= 1
             
-        elif not self.is_ignore_message and self.break_time_left == 0:
+        elif self.break_time_left == 0:
             if hasattr(self, 'break_timer_label') and self.break_timer_label.winfo_exists():
                 self.break_timer_label.config(text="00:00")
                 
             # Enable OK button
             if hasattr(self, 'ok_btn') and self.ok_btn.winfo_exists():
                 self.ok_btn.config(state="normal", bg=THEME["secondary"], fg=THEME["fg"])
-                
-            # Show joke incentive if applicable
-            if self.show_joke_incentive and not self.joke_shown:
-                joke = random.choice(JOKES)
-                if hasattr(self, 'joke_container') and self.joke_container.winfo_exists():
-                    tk.Label(self.joke_container, text=f"✨ {joke}", font=THEME["font_main"], 
-                             bg=THEME["bg"], fg=THEME["accent"], wraplength=380, justify="center").pack()
-                self.joke_shown = True
-                
+
+            # Determine ignored state exactly at expiry: hidden when countdown reaches zero.
+            self.break_was_ignored = not is_visible
+
+            if hasattr(self, 'joke_container') and self.joke_container.winfo_exists():
+                for child in self.joke_container.winfo_children():
+                    child.destroy()
+
+                if self.break_was_ignored:
+                    tk.Label(
+                        self.joke_container,
+                        text="Trying to ignore me? Rejection hurts...",
+                        font=THEME["font_main"],
+                        bg=THEME["bg"],
+                        fg=THEME["accent"],
+                        wraplength=380,
+                        justify="center"
+                    ).pack()
+                elif not self.joke_shown:
+                    joke = random.choice(JOKES)
+                    tk.Label(
+                        self.joke_container,
+                        text=f"✨ {joke}",
+                        font=THEME["font_main"],
+                        bg=THEME["bg"],
+                        fg=THEME["accent"],
+                        wraplength=380,
+                        justify="center"
+                    ).pack()
+                    self.joke_shown = True
+
             self.break_time_left -= 1 # Prevent entering this branch multiple times
             
         # Keep monitoring
         self.break_countdown_job = self.root.after(1000, self.break_tick)
 
-    def on_reminder_close(self, acknowledged, was_ignored=False):
+    def on_reminder_close(self, acknowledged):
         if self.break_countdown_job:
             self.root.after_cancel(self.break_countdown_job)
             self.break_countdown_job = None
             
-        self.record_break_result(acknowledged)
+        self.record_break_result(acknowledged and not self.break_was_ignored)
         
-        if self.reminder_window and self.reminder_window.winfo_exists():
-            self.reminder_window.destroy()
         self.reminder_window = None
-            
-        if was_ignored:
-            self.show_break_reminder("Trying to ignore me? Rejection hurts...", is_ignore_message=True)
-        else:
-            self.restart_timer()
+        self.restart_timer()
 
     def run(self):
         _log("run: entering mainloop")
