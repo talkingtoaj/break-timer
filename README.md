@@ -2,7 +2,7 @@
 
 A smart Windows break reminder application that encourages your wife to take actual breaks from work.
 
-**Install on Windows:** Download and run [**install_break_reminder.bat**](https://github.com/talkingtoaj/break-timer/blob/main/install_break_reminder.bat) — it downloads the latest app from [Releases](https://github.com/talkingtoaj/break-timer/releases/latest) and adds it to startup. *(To get the script: clone the repo or [download the file](https://raw.githubusercontent.com/talkingtoaj/break-timer/main/install_break_reminder.bat).)*
+**Install on Windows:** From the [Releases](https://github.com/talkingtoaj/break-timer/releases/latest) page, download **install_break_reminder.ps1** (or **install_break_reminder.bat**), then run it. The script downloads the latest app and adds it to startup. *(You can also get the scripts from the repo: [.ps1](https://github.com/talkingtoaj/break-timer/blob/main/install_break_reminder.ps1) · [.bat](https://github.com/talkingtoaj/break-timer/blob/main/install_break_reminder.bat).)*
 
 ## Features
 
@@ -33,10 +33,12 @@ A smart Windows break reminder application that encourages your wife to take act
 ### Windows: use the installer script (recommended)
 
 1. **Get the installer**  
-   - Clone or download this repo, then double-click **install_break_reminder.bat**, or  
-   - [Download **install_break_reminder.bat**](https://raw.githubusercontent.com/talkingtoaj/break-timer/main/install_break_reminder.bat) (right‑click → Save link as), then run it.
+   - Go to [**Releases**](https://github.com/talkingtoaj/break-timer/releases/latest) and download **install_break_reminder.ps1** (PowerShell) or **install_break_reminder.bat**, or  
+   - Clone this repo and run either script from the project folder.
 
 2. **Run it**  
+   - **.ps1:** In PowerShell, run `powershell -ExecutionPolicy Bypass -File install_break_reminder.ps1` (or right‑click → Run with PowerShell).  
+   - **.bat:** Double‑click the file.  
    The script downloads the latest **Break reminder.exe** from [Releases](https://github.com/talkingtoaj/break-timer/releases/latest), installs it to `%LOCALAPPDATA%\Break reminder`, and adds it to Windows startup. You’ll see the install folder when it’s done.
 
 3. **Use the app**  
@@ -83,7 +85,8 @@ After installing with **install_break_reminder.bat**, the app starts with Window
 
 ## Files
 
-- `install_break_reminder.bat` - **Windows installer**: downloads latest exe from Releases and installs (recommended)
+- `install_break_reminder.ps1` - **Windows installer** (PowerShell); on [Releases](https://github.com/talkingtoaj/break-timer/releases/latest)
+- `install_break_reminder.bat` - **Windows installer** (batch); on [Releases](https://github.com/talkingtoaj/break-timer/releases/latest)
 - `break_timer.py` - Main application
 - `break_timer.spec` - PyInstaller spec for building the Windows exe
 - `build_exe.bat` - Builds exe and copies to Downloads (for developers, run on Windows)
