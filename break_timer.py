@@ -249,10 +249,28 @@ class BreakTimer:
 
     def minimize_to_tray(self):
         """Hide main window to system tray (or iconify if no tray)."""
-        if self.tray_icon is not None:
-            self.root.withdraw()
-        else:
-            self.root.iconify()
+        try:
+            if self.tray_icon is not None:
+                _log("minimize_to_tray: using withdraw() (tray active)")
+                self.root.withdraw()
+            else:
+                _log("minimize_to_tray: using iconify (no tray)")
+                # On Windows, both iconify() and state("iconic") minimize to taskbar; try both for packaged exe
+                if sys.platform == "win32":
+                    try:
+                        self.root.state("iconic")
+                    except Exception:
+                        self.root.iconify()
+                else:
+                    self.root.iconify()
+        except Exception as e:
+            _log(f"minimize_to_tray: exception {type(e).__name__}: {e}")
+            import traceback
+            try:
+                with open(DEBUG_LOG, "a", encoding="utf-8") as f:
+                    traceback.print_exc(file=f)
+            except Exception:
+                pass
 
     def _show_from_tray(self):
         """Restore main window from tray (called on main thread)."""

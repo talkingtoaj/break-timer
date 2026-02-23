@@ -1,0 +1,17 @@
+# Runtime / user data
+break_timer_config.json
+break_timer_debug.log
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# PyInstaller
+build/
+dist/
+
+# OS / editor
+.DS_Store
