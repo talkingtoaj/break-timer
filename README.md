@@ -2,7 +2,7 @@
 
 A smart Windows break reminder application that encourages your wife to take actual breaks from work.
 
-[**Download latest release (Windows exe)**](https://github.com/talkingtoaj/break-timer/releases/latest) · [Direct download: Break reminder.exe](https://github.com/talkingtoaj/break-timer/releases/latest/download/Break%20reminder.exe)
+**Install on Windows:** Download and run [**install_break_reminder.bat**](https://github.com/talkingtoaj/break-timer/blob/main/install_break_reminder.bat) — it downloads the latest app from [Releases](https://github.com/talkingtoaj/break-timer/releases/latest) and adds it to startup. *(To get the script: clone the repo or [download the file](https://raw.githubusercontent.com/talkingtoaj/break-timer/main/install_break_reminder.bat).)*
 
 ## Features
 
@@ -30,25 +30,21 @@ A smart Windows break reminder application that encourages your wife to take act
 
 ## Installation
 
-### Install on Windows (recommended)
+### Windows: use the installer script (recommended)
 
-1. **Download the installer**  
-   - Go to [**Releases**](https://github.com/talkingtoaj/break-timer/releases/latest) and download **Break reminder.exe** from the latest release, or  
-   - Run **`install_break_reminder.bat`** (see below) to download and install automatically.
+1. **Get the installer**  
+   - Clone or download this repo, then double-click **install_break_reminder.bat**, or  
+   - [Download **install_break_reminder.bat**](https://raw.githubusercontent.com/talkingtoaj/break-timer/main/install_break_reminder.bat) (right‑click → Save link as), then run it.
 
-2. **Run the app**  
-   Double-click **Break reminder.exe**. The window appears in the taskbar.
+2. **Run it**  
+   The script downloads the latest **Break reminder.exe** from [Releases](https://github.com/talkingtoaj/break-timer/releases/latest), installs it to `%LOCALAPPDATA%\Break reminder`, and adds it to Windows startup. You’ll see the install folder when it’s done.
 
-3. **Start with Windows (optional)**  
-   In Command Prompt or PowerShell, go to the folder where the exe is and run:  
-   `"Break reminder.exe" --install`  
-   To remove from startup later: Task Manager → Startup → disable "BreakTimer".
+3. **Use the app**  
+   The app starts with Windows. You can also run **Break reminder.exe** from the install folder. It appears in the taskbar; use the title bar **Minimize** or the in-app **Minimize to tray** button to hide it.
 
-Config and log files are created next to the exe. No Python or other dependencies required when using the exe.
+No Python or other dependencies needed. Requires an internet connection for the first install.
 
-### Windows installer script (`install_break_reminder.bat`)
-
-Run **install_break_reminder.bat** to download the latest **Break reminder.exe** from GitHub Releases into a local folder and optionally add it to Windows startup. Requires an internet connection. If no release exists yet, build the exe locally with `build_exe.bat` and use the steps above.
+**Manual install (exe only):** If you prefer not to use the script, download **Break reminder.exe** from [Releases](https://github.com/talkingtoaj/break-timer/releases/latest), put it in a folder, and run `"Break reminder.exe" --install` from that folder to start with Windows.
 
 ### Option 1: Automated Installation (Python)
 1. Double-click `install.bat`
@@ -72,11 +68,7 @@ Requirements: Python 3.7+ and pip on Windows. The exe is single-file and does no
 
 ## Running on Windows
 
-- **Using the exe**: Double-click **Break reminder.exe** (e.g. from your Downloads folder). The window appears in the **taskbar**; use the title bar **Minimize** or the in-app **Minimize to tray** button to hide it. Use the system tray icon (if available) or the taskbar button to restore.
-- **Start with Windows**: Open Command Prompt or PowerShell, go to the folder where the exe lives, and run:  
-  `"Break reminder.exe" --install`  
-  Then the app will start automatically when you log in. To remove from startup: Task Manager → Startup tab → disable "BreakTimer".
-- **Interval**: Use the 20 / 30 / 45 / 60 buttons to set the focus length. When the timer reaches 0, a break reminder appears; after the 2-minute break countdown you can resume.
+After installing with **install_break_reminder.bat**, the app starts with Windows. You can also run **Break reminder.exe** from `%LOCALAPPDATA%\Break reminder`. Use the 20 / 30 / 45 / 60 buttons to set the focus length; when the timer hits 0, a break reminder appears. To remove from startup: Task Manager → Startup → disable "BreakTimer".
 
 ## Usage
 
@@ -91,12 +83,12 @@ Requirements: Python 3.7+ and pip on Windows. The exe is single-file and does no
 
 ## Files
 
-- `install_break_reminder.bat` - Downloads latest exe from GitHub Releases and installs (Windows)
+- `install_break_reminder.bat` - **Windows installer**: downloads latest exe from Releases and installs (recommended)
 - `break_timer.py` - Main application
 - `break_timer.spec` - PyInstaller spec for building the Windows exe
-- `build_exe.bat` - Builds exe and copies to Downloads (run on Windows)
+- `build_exe.bat` - Builds exe and copies to Downloads (for developers, run on Windows)
 - `run_break_timer.sh` - Launcher for Linux/WSL (uses system Python to avoid xcb crash)
-- `install.bat` - Automated installation script (Windows)
+- `install.bat` - Python-based install (installs deps and adds to startup)
 - `requirements.txt` - Python dependencies
 - `break_timer_config.json` - Settings file (created automatically)
 
