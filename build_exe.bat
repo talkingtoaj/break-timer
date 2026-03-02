@@ -17,8 +17,15 @@ if not exist "dist\Break.reminder.exe" (
 )
 
 set DOWNLOADS=%USERPROFILE%\Downloads
+set INSTALL_DIR=%LOCALAPPDATA%\Break reminder
 echo Copying to %DOWNLOADS%...
 copy /Y "dist\Break.reminder.exe" "%DOWNLOADS%\Break.reminder.exe"
+
+if exist "%INSTALL_DIR%" (
+    echo Updating installed app at %INSTALL_DIR%...
+    copy /Y "dist\Break.reminder.exe" "%INSTALL_DIR%\Break.reminder.exe"
+    echo Installed version updated.
+)
 
 echo Done. Exe is at: %DOWNLOADS%\Break.reminder.exe
 explorer /select,"%DOWNLOADS%\Break.reminder.exe"

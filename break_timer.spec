@@ -7,7 +7,7 @@ a = Analysis(
     ['break_timer.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('chime.mp3', '.')],
     hiddenimports=['pystray', 'PIL', 'PIL.Image', 'PIL.ImageDraw'],
     hookspath=[],
     hooksconfig={},

@@ -10,9 +10,12 @@ import threading
 # Debug logging to file (next to script or next to exe when frozen)
 if getattr(sys, "frozen", False):
     _app_base = os.path.dirname(sys.executable)
+    _data_base = getattr(sys, "_MEIPASS", _app_base)
 else:
     _app_base = os.path.dirname(os.path.abspath(__file__))
+    _data_base = _app_base
 DEBUG_LOG = os.path.join(_app_base, "break_timer_debug.log")
+CHIME_MP3 = os.path.join(_data_base, "chime.mp3")
 
 def _log(msg):
     try:
@@ -21,6 +24,47 @@ def _log(msg):
             f.flush()
     except Exception:
         pass
+
+
+def _stop_chime():
+    """Stop chime immediately (e.g. when app brought to foreground)."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.winmm.mciSendStringW('stop chime_sound', None, 0, 0)
+            ctypes.windll.winmm.mciSendStringW('close chime_sound', None, 0, 0)
+        except Exception:
+            pass
+
+
+def _play_chime_once():
+    """Play the gentle chime sound once (MP3). Uses Windows MCI (zero extra dependencies)."""
+    if not os.path.exists(CHIME_MP3):
+        _log("chime: file not found " + CHIME_MP3)
+        return
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            winmm = ctypes.windll.winmm
+            winmm.mciSendStringW('close chime_sound', None, 0, 0)
+            path = CHIME_MP3.replace('/', '\\')
+            ret = winmm.mciSendStringW(f'open "{path}" type mpegvideo alias chime_sound', None, 0, 0)
+            if ret != 0:
+                _log(f"chime: MCI open error {ret}")
+                return
+            winmm.mciSendStringW('play chime_sound', None, 0, 0)
+        except Exception as e:
+            _log(f"chime: MCI error {e}")
+    else:
+        try:
+            import subprocess
+            subprocess.Popen(
+                ["mpg123", "-q", CHIME_MP3],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as e:
+            _log(f"chime: mpg123 error {e}")
 
 # Windows-specific imports
 try:
@@ -153,12 +197,16 @@ class BreakTimer:
         self.reminder_window = None
         self.break_countdown_job = None
         self.tray_icon = None
+        self._app_in_foreground = True
+        self._last_chime_time = 0
         _log("init: starting setup_ui")
         self.setup_ui()
         _log("init: setup_ui done")
         self._center_window()
         _log("init: center done, starting timer")
         self.start_timer()
+        # Stop any currently-playing chime immediately when app regains focus.
+        self.root.bind("<FocusIn>", self._on_focus_in)
         # After first map: strip decorations and start tray (avoids hang on X11/WSL)
         self.root.after(100, self._after_first_map)
         _log("init: after(100) scheduled, __init__ done")
@@ -175,6 +223,8 @@ class BreakTimer:
                     cfg = json.load(f)
                     if "default_seconds" not in cfg:
                         cfg["default_seconds"] = None
+                    if cfg.get("default_seconds") == 20:
+                        cfg["default_seconds"] = 5  # migrated from old 20s option
                     return cfg
             except:
                 return default_config
@@ -220,10 +270,10 @@ class BreakTimer:
 
         self.interval_buttons = {}
 
-        debug_btn = FlatButton(interval_frame, text="20s", command=lambda: self.set_interval_seconds(20))
+        debug_btn = FlatButton(interval_frame, text="5s", command=lambda: self.set_interval_seconds(5))
         debug_btn.pack(side=tk.LEFT, padx=6)
-        self.interval_buttons["20s"] = debug_btn
-        debug_btn.bind("<Leave>", lambda e: self._interval_leave("20s"))
+        self.interval_buttons["5s"] = debug_btn
+        debug_btn.bind("<Leave>", lambda e: self._interval_leave("5s"))
 
         for val in [20, 30, 45, 60]:
             key = f"{val}m"
@@ -290,6 +340,12 @@ class BreakTimer:
         self.root.deiconify()
         self.root.lift()
         self.root.focus_force()
+        self._on_focus_in()
+
+    def _on_focus_in(self, _event=None):
+        """Foreground callback: stop chime immediately."""
+        self._app_in_foreground = True
+        _stop_chime()
 
     def _start_tray(self):
         """Start system tray icon in a background thread (if pystray/Pillow available)."""
@@ -340,7 +396,7 @@ class BreakTimer:
 
     def _interval_leave(self, key):
         btn = self.interval_buttons[key]
-        if key == "20s" and self.config.get("default_seconds") == 20:
+        if key == "5s" and self.config.get("default_seconds") == 5:
             btn.config(bg=THEME["accent"], fg="white")
         elif key.endswith("m") and int(key[:-1]) == self.config["default_minutes"] and self.config.get("default_seconds") is None:
             btn.config(bg=THEME["accent"], fg="white")
@@ -349,7 +405,7 @@ class BreakTimer:
 
     def _update_interval_buttons(self):
         for key, btn in self.interval_buttons.items():
-            if key == "20s" and self.config.get("default_seconds") == 20:
+            if key == "5s" and self.config.get("default_seconds") == 5:
                 btn.config(bg=THEME["accent"], fg="white")
             elif key.endswith("m") and int(key[:-1]) == self.config["default_minutes"] and self.config.get("default_seconds") is None:
                 btn.config(bg=THEME["accent"], fg="white")
@@ -376,6 +432,8 @@ class BreakTimer:
         return self.config["default_minutes"] * 60
 
     def restart_timer(self):
+        _stop_chime()
+        self._last_chime_time = 0
         self.show_focus_view()
         if self.restart_btn.winfo_ismapped():
             self.restart_btn.pack_forget()
@@ -385,7 +443,7 @@ class BreakTimer:
             self.root.after_cancel(self.break_countdown_job)
             self.break_countdown_job = None
         self.reminder_window = None
-            
+
         self.time_left = self.get_work_duration_seconds()
         self.update_timer_display()
         self.start_timer()
@@ -455,14 +513,11 @@ class BreakTimer:
         tk.Label(main_frame, text=message, font=THEME["font_title"], 
                  bg=THEME["bg"], fg=THEME["fg"]).pack(pady=(0, 10))
                  
-        ignore_rate = self.get_ignore_rate()
-        self.show_joke_incentive = ignore_rate > 40
         self.joke_shown = False
         self.break_was_ignored = False
 
-        if self.show_joke_incentive:
-            tk.Label(main_frame, text="Stay mindful for a little humor...", 
-                     font=THEME["font_small"], bg=THEME["bg"], fg=THEME["accent"]).pack(pady=(0, 5))
+        tk.Label(main_frame, text="Keep me in the forefront until the countdown ends for a joke!", 
+                 font=THEME["font_small"], bg=THEME["bg"], fg=THEME["accent"]).pack(pady=(0, 5))
         
         self.break_time_left = 60 # 1 minute
         self.break_timer_label = tk.Label(main_frame, text="01:00", 
@@ -488,13 +543,37 @@ class BreakTimer:
         # Start combined monitor and countdown loop
         self.break_tick()
 
+    def _is_app_in_foreground(self):
+        if self.root.state() in ("iconic", "withdrawn"):
+            return False
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                kernel32 = ctypes.windll.kernel32
+                fg = user32.GetForegroundWindow()
+                if not fg:
+                    return False
+                fg_pid = ctypes.c_ulong(0)
+                user32.GetWindowThreadProcessId(fg, ctypes.byref(fg_pid))
+                return fg_pid.value == kernel32.GetCurrentProcessId()
+            except Exception:
+                return self.root.focus_displayof() is not None
+        return self.root.focus_displayof() is not None
+
     def break_tick(self):
         if not self.reminder_window or not self.root.winfo_exists():
             return
-            
+
+        self._app_in_foreground = self._is_app_in_foreground()
+
+        # As soon as app is in foreground, stop chime immediately (even mid-play)
+        if self._app_in_foreground:
+            _stop_chime()
+
         # Count down hidden time while minimized/withdrawn
         is_visible = self.root.state() not in ('iconic', 'withdrawn')
-        
+
         # Handle countdown
         if self.break_time_left > 0:
             minutes = self.break_time_left // 60
@@ -541,8 +620,16 @@ class BreakTimer:
                     ).pack()
                     self.joke_shown = True
 
-            self.break_time_left -= 1 # Prevent entering this branch multiple times
-            
+            self.break_time_left -= 1  # Prevent entering this branch multiple times
+
+        # After countdown has ended: chime once every 32s while not in foreground
+        if self.break_time_left < 0 and not self._app_in_foreground:
+            now = time.time()
+            if now - self._last_chime_time >= 32:
+                _play_chime_once()
+                self._last_chime_time = now
+                _log("chiming: played")
+
         # Keep monitoring
         self.break_countdown_job = self.root.after(1000, self.break_tick)
 
