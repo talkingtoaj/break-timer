@@ -11,6 +11,8 @@ on:
 jobs:
   build-and-release:
     runs-on: windows-latest
+    permissions:
+      contents: write   # required for creating releases and uploading assets
     steps:
       - uses: actions/checkout@v4
 
