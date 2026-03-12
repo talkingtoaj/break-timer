@@ -199,12 +199,16 @@ class BreakTimer:
         self.tray_icon = None
         self._app_in_foreground = True
         self._last_chime_time = 0
+        self._last_break_tick_at = None
+        self._is_quitting = False
         _log("init: starting setup_ui")
         self.setup_ui()
         _log("init: setup_ui done")
         self._center_window()
         _log("init: center done, starting timer")
         self.start_timer()
+        self.root.protocol("WM_DELETE_WINDOW", self._request_close)
+        self.root.bind("<Alt-F4>", lambda _event: self._request_close())
         # Stop any currently-playing chime immediately when app regains focus.
         self.root.bind("<FocusIn>", self._on_focus_in)
         # After first map: strip decorations and start tray (avoids hang on X11/WSL)
@@ -236,8 +240,6 @@ class BreakTimer:
             
     def setup_ui(self):
         _log("setup_ui: body frame")
-        # Use OS window frame so the window appears in the taskbar and minimize works.
-        # No custom title bar here (would require overrideredirect which hides taskbar).
         self.body = tk.Frame(self.root, bg=THEME["bg"])
         self.body.pack(fill=tk.BOTH, expand=True)
         self.body.config(width=400, height=380)
@@ -295,8 +297,15 @@ class BreakTimer:
         self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
     def _apply_no_decorations(self):
-        """Remove OS window decorations. Disabled: causes window to disappear from taskbar and breaks minimize."""
-        _log("apply_no_decorations: skipped (keep taskbar and minimize working)")
+        """Remove OS window decorations on Windows and rely on tray-based minimize/exit."""
+        if sys.platform != "win32":
+            _log("apply_no_decorations: skipped (non-Windows)")
+            return
+        try:
+            self.root.overrideredirect(True)
+            _log("apply_no_decorations: enabled")
+        except Exception as e:
+            _log(f"apply_no_decorations: error {type(e).__name__}: {e}")
 
     def _after_first_map(self):
         """Runs once after window is shown: strip decorations, then start tray."""
@@ -339,13 +348,50 @@ class BreakTimer:
         """Restore main window from tray (called on main thread)."""
         self.root.deiconify()
         self.root.lift()
-        self.root.focus_force()
+        self.root.attributes("-topmost", True)
+        self.root.after(200, lambda: self.root.attributes("-topmost", False))
+        try:
+            self.root.focus_force()
+        except Exception:
+            pass
         self._on_focus_in()
 
     def _on_focus_in(self, _event=None):
         """Foreground callback: stop chime immediately."""
         self._app_in_foreground = True
         _stop_chime()
+
+    def _request_close(self):
+        """Normal close routes through tray minimize so the timer keeps running."""
+        if self._is_quitting:
+            return
+        self.minimize_to_tray()
+
+    def quit_app(self):
+        """Fully exit the application. Intended for tray menu only."""
+        if self._is_quitting:
+            return
+        self._is_quitting = True
+        _stop_chime()
+        if self.break_countdown_job:
+            try:
+                self.root.after_cancel(self.break_countdown_job)
+            except Exception:
+                pass
+            self.break_countdown_job = None
+        try:
+            if self.tray_icon is not None:
+                self.tray_icon.stop()
+        except Exception:
+            pass
+        try:
+            self.root.quit()
+        except Exception:
+            pass
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
 
     def _start_tray(self):
         """Start system tray icon in a background thread (if pystray/Pillow available)."""
@@ -371,7 +417,7 @@ class BreakTimer:
                     "Break reminder",
                     menu=pystray.Menu(
                         pystray.MenuItem("Show", lambda i, _: root.after(0, self._show_from_tray)),
-                        pystray.MenuItem("Quit", lambda i, _: (root.after(0, root.quit), i.stop())),
+                        pystray.MenuItem("Exit", lambda i, _: root.after(0, self.quit_app)),
                     ),
                 )
                 self.tray_icon = icon
@@ -501,7 +547,7 @@ class BreakTimer:
         self.root.deiconify()
         self.root.lift()
         self.root.focus_force()
-        self.root.attributes('-topmost', False)
+        self.root.after(200, lambda: self.root.attributes('-topmost', False))
 
         self.root.title("Mindful Pause")
         self._clear_body()
@@ -520,6 +566,7 @@ class BreakTimer:
                  font=THEME["font_small"], bg=THEME["bg"], fg=THEME["accent"]).pack(pady=(0, 5))
         
         self.break_time_left = 60 # 1 minute
+        self._last_break_tick_at = time.time()
         self.break_timer_label = tk.Label(main_frame, text="01:00", 
                                          font=THEME["font_timer"], bg=THEME["bg"], fg=THEME["accent"])
         self.break_timer_label.pack(pady=(0, 15))
@@ -550,13 +597,45 @@ class BreakTimer:
             try:
                 import ctypes
                 user32 = ctypes.windll.user32
-                kernel32 = ctypes.windll.kernel32
-                fg = user32.GetForegroundWindow()
-                if not fg:
+                hwnd = self.root.winfo_id()
+                if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
                     return False
-                fg_pid = ctypes.c_ulong(0)
-                user32.GetWindowThreadProcessId(fg, ctypes.byref(fg_pid))
-                return fg_pid.value == kernel32.GetCurrentProcessId()
+
+                class POINT(ctypes.Structure):
+                    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+                class RECT(ctypes.Structure):
+                    _fields_ = [
+                        ("left", ctypes.c_long),
+                        ("top", ctypes.c_long),
+                        ("right", ctypes.c_long),
+                        ("bottom", ctypes.c_long),
+                    ]
+
+                def root_owner(window_handle):
+                    GA_ROOT = 2
+                    return user32.GetAncestor(window_handle, GA_ROOT)
+
+                fg = user32.GetForegroundWindow()
+                if fg and root_owner(fg) == hwnd:
+                    return True
+
+                rect = RECT()
+                if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                    return False
+
+                sample_points = [
+                    POINT((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2),
+                    POINT(rect.left + ((rect.right - rect.left) // 4), (rect.top + rect.bottom) // 2),
+                    POINT(rect.right - ((rect.right - rect.left) // 4), (rect.top + rect.bottom) // 2),
+                ]
+
+                hits = 0
+                for point in sample_points:
+                    top_at_point = user32.WindowFromPoint(point)
+                    if top_at_point and root_owner(top_at_point) == hwnd:
+                        hits += 1
+                return hits >= 2
             except Exception:
                 return self.root.focus_displayof() is not None
         return self.root.focus_displayof() is not None
@@ -565,11 +644,20 @@ class BreakTimer:
         if not self.reminder_window or not self.root.winfo_exists():
             return
 
+        now = time.time()
+        elapsed = 1.0 if self._last_break_tick_at is None else now - self._last_break_tick_at
+        self._last_break_tick_at = now
+
         self._app_in_foreground = self._is_app_in_foreground()
 
         # As soon as app is in foreground, stop chime immediately (even mid-play)
         if self._app_in_foreground:
             _stop_chime()
+
+        if elapsed > 10:
+            _log(f"break_tick: detected sleep/resume gap of {elapsed:.1f}s")
+            self.break_countdown_job = self.root.after(1000, self.break_tick)
+            return
 
         # Count down hidden time while minimized/withdrawn
         is_visible = self.root.state() not in ('iconic', 'withdrawn')
@@ -637,6 +725,7 @@ class BreakTimer:
         if self.break_countdown_job:
             self.root.after_cancel(self.break_countdown_job)
             self.break_countdown_job = None
+        self._last_break_tick_at = None
             
         self.record_break_result(acknowledged and not self.break_was_ignored)
         
