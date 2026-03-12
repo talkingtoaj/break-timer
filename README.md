@@ -23,6 +23,22 @@ If you ignore it, it gets hurt feelings. But it will reward you with increasingl
 - Gentle chiming if you minimize and don’t come back until after the countdown
 - Clean, simple interface
 
+## Releasing
+
+**From WSL (recommended):** Tag and push; GitHub Actions builds the Windows exe and creates the release.
+
+```bash
+./release.sh        # prompt for version
+./release.sh 1.0.3  # release as v1.0.3
+```
+
+**From Windows:** Use **release.bat** to build the exe locally and publish (requires [GitHub CLI](https://cli.github.com/)).
+
+```bat
+release.bat
+release.bat 1.0.3
+```
+
 ## Removing the App
 
 1. Open Task Manager > Startup tab
