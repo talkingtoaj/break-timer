@@ -8,7 +8,10 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('chime.mp3', '.')],
-    hiddenimports=['pystray', 'PIL', 'PIL.Image', 'PIL.ImageDraw'],
+    hiddenimports=[
+        'pystray', 'pystray._win32', 'pystray._base',
+        'PIL', 'PIL.Image', 'PIL.ImageDraw',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
