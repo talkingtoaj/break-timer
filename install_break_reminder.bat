@@ -16,6 +16,9 @@ echo.
 
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 
+REM Stop any running instance so the exe is not locked during download
+taskkill /IM "Break.reminder.exe" /F >nul 2>&1
+
 echo Downloading Break.reminder.exe...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "try { " ^
