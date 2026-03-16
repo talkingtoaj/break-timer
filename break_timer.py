@@ -394,51 +394,49 @@ class BreakTimer:
             pass
 
     def _start_tray(self):
-        """Start system tray icon in a background thread (if pystray/Pillow available)."""
+        """Start system tray icon (if pystray/Pillow available)."""
         # Tray on Linux/WSL uses X11 in a thread and conflicts with Tkinter's X11 usage -> crash.
         # Only enable tray on Windows.
         if sys.platform != "win32":
             _log("_start_tray: skipped (tray only on Windows to avoid X11 conflict)")
             return
-        def run_tray():
-            try:
-                _log("tray thread: import pystray")
-                import pystray
-                _log("tray thread: create image")
-                img = create_tray_icon_image()
-                if img is None:
-                    _log("tray thread: no image, exit")
-                    return
-                root = self.root
-                _log("tray thread: create Icon")
-                icon = pystray.Icon(
-                    "break_reminder",
-                    img,
-                    "Break reminder",
-                    menu=pystray.Menu(
-                        pystray.MenuItem("Show", lambda i, _: root.after(0, self._show_from_tray)),
-                        pystray.MenuItem("Exit", lambda i, _: root.after(0, self.quit_app)),
-                    ),
-                )
-                self.tray_icon = icon
-                _log("tray thread: calling icon.run()")
-                icon.run()
-                _log("tray thread: icon.run() returned")
-            except Exception as e:
-                _log(f"tray thread: exception {type(e).__name__}: {e}")
-                import traceback
-                try:
-                    with open(DEBUG_LOG, "a", encoding="utf-8") as f:
-                        traceback.print_exc(file=f)
-                except Exception:
-                    pass
         try:
             import pystray
         except ImportError:
             _log("_start_tray: pystray not installed")
             return
-        _log("_start_tray: starting tray thread")
-        threading.Thread(target=run_tray, daemon=True).start()
+        try:
+            _log("_start_tray: creating icon")
+            img = create_tray_icon_image()
+            if img is None:
+                _log("_start_tray: no image, skipping")
+                return
+            icon = pystray.Icon(
+                "break_reminder",
+                img,
+                "Break reminder",
+                menu=pystray.Menu(
+                    pystray.MenuItem(
+                        "Show",
+                        lambda i, _: self.root.after(0, self._show_from_tray),
+                        default=True,
+                    ),
+                    pystray.MenuItem("Exit", lambda i, _: self.root.after(0, self.quit_app)),
+                ),
+            )
+            # run_detached() starts its own thread and returns immediately, so
+            # self.tray_icon is set synchronously — no race with minimize_to_tray().
+            icon.run_detached()
+            self.tray_icon = icon
+            _log("_start_tray: icon running (detached)")
+        except Exception as e:
+            _log(f"_start_tray: error {type(e).__name__}: {e}")
+            import traceback
+            try:
+                with open(DEBUG_LOG, "a", encoding="utf-8") as f:
+                    traceback.print_exc(file=f)
+            except Exception:
+                pass
 
     def _interval_leave(self, key):
         btn = self.interval_buttons[key]
