@@ -3,15 +3,12 @@
 
 block_cipher = None
 
-from PyInstaller.utils.hooks import collect_all
-pystray_datas, pystray_binaries, pystray_hiddenimports = collect_all('pystray')
-
 a = Analysis(
     ['break_timer.py'],
     pathex=[],
-    binaries=[] + pystray_binaries,
-    datas=[('chime.mp3', '.')] + pystray_datas,
-    hiddenimports=['PIL', 'PIL.Image', 'PIL.ImageDraw'] + pystray_hiddenimports,
+    binaries=[],
+    datas=[('chime.mp3', '.')],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

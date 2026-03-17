@@ -99,19 +99,157 @@ THEME = {
     "titlebar": "#EBE8E3",
 }
 
-def create_tray_icon_image():
-    """Create a simple pastel sage tray icon (64x64 RGBA)."""
-    try:
-        from PIL import Image, ImageDraw
-        size = 64
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        # Sage circle
-        margin = 8
-        d.ellipse([margin, margin, size - margin, size - margin], fill=(159, 180, 166, 255))
-        return img
-    except Exception:
-        return None
+class Win32TrayIcon:
+    """System tray icon using pure ctypes — no pystray/Pillow needed."""
+
+    WM_USER = 0x0400
+    WM_TRAYICON = WM_USER + 20
+    WM_COMMAND = 0x0111
+    WM_LBUTTONDBLCLK = 0x0203
+    WM_RBUTTONUP = 0x0205
+    NIM_ADD = 0x00
+    NIM_DELETE = 0x02
+    NIF_ICON = 0x02
+    NIF_MESSAGE = 0x01
+    NIF_TIP = 0x04
+    IDM_SHOW = 1
+    IDM_EXIT = 2
+
+    def __init__(self, tooltip, on_show, on_exit):
+        import ctypes
+        from ctypes import wintypes
+
+        self._on_show = on_show
+        self._on_exit = on_exit
+        self._tooltip = tooltip
+        self._hwnd = None
+        self._thread = None
+
+        # Define NOTIFYICONDATAW
+        class NOTIFYICONDATAW(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("hWnd", wintypes.HWND),
+                ("uID", wintypes.UINT),
+                ("uFlags", wintypes.UINT),
+                ("uCallbackMessage", wintypes.UINT),
+                ("hIcon", wintypes.HICON),
+                ("szTip", wintypes.WCHAR * 128),
+            ]
+        self._NID = NOTIFYICONDATAW
+
+    def run_detached(self):
+        """Start the tray icon in a background thread."""
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        shell32 = ctypes.windll.shell32
+        kernel32 = ctypes.windll.kernel32
+
+        # Set correct arg/return types for 64-bit Windows
+        user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        user32.DefWindowProcW.restype = ctypes.c_long
+
+        WNDPROC = ctypes.WINFUNCTYPE(
+            ctypes.c_long, wintypes.HWND, wintypes.UINT,
+            wintypes.WPARAM, wintypes.LPARAM,
+        )
+
+        def wnd_proc(hwnd, msg, wparam, lparam):
+            if msg == self.WM_TRAYICON:
+                if lparam == self.WM_LBUTTONDBLCLK:
+                    self._on_show()
+                elif lparam == self.WM_RBUTTONUP:
+                    menu = user32.CreatePopupMenu()
+                    user32.InsertMenuW(menu, 0, 0x0000, self.IDM_SHOW, "Show")
+                    user32.InsertMenuW(menu, 1, 0x0000, self.IDM_EXIT, "Exit")
+                    pt = wintypes.POINT()
+                    user32.GetCursorPos(ctypes.byref(pt))
+                    user32.SetForegroundWindow(hwnd)
+                    user32.TrackPopupMenu(menu, 0, pt.x, pt.y, 0, hwnd, None)
+                    user32.DestroyMenu(menu)
+                return 0
+            if msg == self.WM_COMMAND:
+                cmd = wparam & 0xFFFF
+                if cmd == self.IDM_SHOW:
+                    self._on_show()
+                elif cmd == self.IDM_EXIT:
+                    self._on_exit()
+                return 0
+            if msg == 0x0002:  # WM_DESTROY
+                user32.PostQuitMessage(0)
+                return 0
+            return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+        self._wnd_proc_ref = WNDPROC(wnd_proc)  # prevent GC
+
+        # Define WNDCLASSW (not in ctypes.wintypes)
+        class WNDCLASSW(ctypes.Structure):
+            _fields_ = [
+                ("style", wintypes.UINT),
+                ("lpfnWndProc", WNDPROC),
+                ("cbClsExtra", ctypes.c_int),
+                ("cbWndExtra", ctypes.c_int),
+                ("hInstance", wintypes.HINSTANCE),
+                ("hIcon", wintypes.HICON),
+                ("hCursor", wintypes.HANDLE),
+                ("hbrBackground", wintypes.HANDLE),
+                ("lpszMenuName", wintypes.LPCWSTR),
+                ("lpszClassName", wintypes.LPCWSTR),
+            ]
+
+        hinstance = kernel32.GetModuleHandleW(None)
+        wc = WNDCLASSW()
+        wc.lpfnWndProc = self._wnd_proc_ref
+        wc.hInstance = hinstance
+        wc.lpszClassName = "BreakReminderTray"
+        user32.RegisterClassW(ctypes.byref(wc))
+
+        # Create hidden message-only window
+        self._hwnd = user32.CreateWindowExW(
+            0, "BreakReminderTray", "BreakReminderTray",
+            0, 0, 0, 0, 0, None, None, hinstance, None,
+        )
+
+        # Load default app icon
+        hicon = user32.LoadIconW(None, ctypes.cast(32512, wintypes.LPCWSTR))  # IDI_APPLICATION
+
+        # Add tray icon
+        nid = self._NID()
+        nid.cbSize = ctypes.sizeof(nid)
+        nid.hWnd = self._hwnd
+        nid.uID = 1
+        nid.uFlags = self.NIF_ICON | self.NIF_MESSAGE | self.NIF_TIP
+        nid.uCallbackMessage = self.WM_TRAYICON
+        nid.hIcon = hicon
+        nid.szTip = self._tooltip[:127]
+        shell32.Shell_NotifyIconW(self.NIM_ADD, ctypes.byref(nid))
+        self._nid = nid
+        _log("Win32TrayIcon: icon added")
+
+        # Message loop
+        msg = wintypes.MSG()
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+        _log("Win32TrayIcon: message loop exited")
+
+    def stop(self):
+        """Remove tray icon and stop message loop."""
+        if self._hwnd is None:
+            return
+        try:
+            import ctypes
+            shell32 = ctypes.windll.shell32
+            shell32.Shell_NotifyIconW(self.NIM_DELETE, ctypes.byref(self._nid))
+            ctypes.windll.user32.PostMessageW(self._hwnd, 0x0010, 0, 0)  # WM_CLOSE
+        except Exception:
+            pass
 
 def make_title_bar(parent, window, title, on_close, on_minimize=None):
     """Custom title bar with title, minimize, and close. Draggable."""
@@ -320,29 +458,12 @@ class BreakTimer:
         _log("after_first_map: done")
 
     def minimize_to_tray(self):
-        """Hide main window to system tray (or iconify if no tray)."""
+        """Hide main window; restore via tray icon double-click or Show menu."""
         try:
-            if self.tray_icon is not None:
-                _log("minimize_to_tray: using withdraw() (tray active)")
-                self.root.withdraw()
-            else:
-                _log("minimize_to_tray: using iconify (no tray)")
-                # On Windows, both iconify() and state("iconic") minimize to taskbar; try both for packaged exe
-                if sys.platform == "win32":
-                    try:
-                        self.root.state("iconic")
-                    except Exception:
-                        self.root.iconify()
-                else:
-                    self.root.iconify()
+            _log("minimize_to_tray: withdraw()")
+            self.root.withdraw()
         except Exception as e:
             _log(f"minimize_to_tray: exception {type(e).__name__}: {e}")
-            import traceback
-            try:
-                with open(DEBUG_LOG, "a", encoding="utf-8") as f:
-                    traceback.print_exc(file=f)
-            except Exception:
-                pass
 
     def _show_from_tray(self):
         """Restore main window from tray (called on main thread)."""
@@ -394,41 +515,19 @@ class BreakTimer:
             pass
 
     def _start_tray(self):
-        """Start system tray icon (if pystray/Pillow available)."""
-        # Tray on Linux/WSL uses X11 in a thread and conflicts with Tkinter's X11 usage -> crash.
-        # Only enable tray on Windows.
+        """Start system tray icon using pure ctypes (Windows only)."""
         if sys.platform != "win32":
-            _log("_start_tray: skipped (tray only on Windows to avoid X11 conflict)")
+            _log("_start_tray: skipped (Windows only)")
             return
         try:
-            import pystray
-        except ImportError:
-            _log("_start_tray: pystray not installed")
-            return
-        try:
-            _log("_start_tray: creating icon")
-            img = create_tray_icon_image()
-            if img is None:
-                _log("_start_tray: no image, skipping")
-                return
-            icon = pystray.Icon(
-                "break_reminder",
-                img,
-                "Break reminder",
-                menu=pystray.Menu(
-                    pystray.MenuItem(
-                        "Show",
-                        lambda i, _: self.root.after(0, self._show_from_tray),
-                        default=True,
-                    ),
-                    pystray.MenuItem("Exit", lambda i, _: self.root.after(0, self.quit_app)),
-                ),
+            icon = Win32TrayIcon(
+                tooltip="Break reminder",
+                on_show=lambda: self.root.after(0, self._show_from_tray),
+                on_exit=lambda: self.root.after(0, self.quit_app),
             )
-            # run_detached() starts its own thread and returns immediately, so
-            # self.tray_icon is set synchronously — no race with minimize_to_tray().
             icon.run_detached()
             self.tray_icon = icon
-            _log("_start_tray: icon running (detached)")
+            _log("_start_tray: Win32TrayIcon running")
         except Exception as e:
             _log(f"_start_tray: error {type(e).__name__}: {e}")
             import traceback
