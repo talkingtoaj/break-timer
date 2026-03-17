@@ -348,7 +348,9 @@ class BreakTimer:
         self.root.protocol("WM_DELETE_WINDOW", self._request_close)
         self.root.bind("<Alt-F4>", lambda _event: self._request_close())
         # Stop any currently-playing chime immediately when app regains focus.
+        # Bind multiple events because overrideredirect windows may not get FocusIn.
         self.root.bind("<FocusIn>", self._on_focus_in)
+        self.root.bind("<Button-1>", self._on_focus_in)
         # After first map: strip decorations and start tray (avoids hang on X11/WSL)
         self.root.after(100, self._after_first_map)
         _log("init: after(100) scheduled, __init__ done")
@@ -695,7 +697,9 @@ class BreakTimer:
                 import ctypes
                 user32 = ctypes.windll.user32
                 hwnd = self.root.winfo_id()
-                if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
+                GA_ROOT = 2
+                top_hwnd = user32.GetAncestor(hwnd, GA_ROOT) or hwnd
+                if not user32.IsWindowVisible(top_hwnd) or user32.IsIconic(top_hwnd):
                     return False
 
                 class POINT(ctypes.Structure):
@@ -713,12 +717,20 @@ class BreakTimer:
                     GA_ROOT = 2
                     return user32.GetAncestor(window_handle, GA_ROOT)
 
-                fg = user32.GetForegroundWindow()
-                if fg and root_owner(fg) == hwnd:
-                    return True
+                # winfo_id() returns inner Tk frame; get actual top-level HWND
+                my_root = root_owner(hwnd)
+                # Collect all HWNDs that belong to this app
+                app_hwnds = {h for h in (hwnd, my_root) if h}
 
+                fg = user32.GetForegroundWindow()
+                if fg:
+                    fg_root = root_owner(fg)
+                    if fg in app_hwnds or fg_root in app_hwnds:
+                        return True
+
+                # Fallback: check if window is topmost at sample points
                 rect = RECT()
-                if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                if not user32.GetWindowRect(my_root or hwnd, ctypes.byref(rect)):
                     return False
 
                 sample_points = [
@@ -730,8 +742,10 @@ class BreakTimer:
                 hits = 0
                 for point in sample_points:
                     top_at_point = user32.WindowFromPoint(point)
-                    if top_at_point and root_owner(top_at_point) == hwnd:
-                        hits += 1
+                    if top_at_point:
+                        top_root = root_owner(top_at_point)
+                        if top_at_point in app_hwnds or top_root in app_hwnds:
+                            hits += 1
                 return hits >= 2
             except Exception:
                 return self.root.focus_displayof() is not None
